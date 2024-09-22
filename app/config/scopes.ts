@@ -1,0 +1,1 @@
+export const scopes = ["openid", "email", "profile", "https://www.googleapis.com/auth/userinfo.email"];
