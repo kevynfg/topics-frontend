@@ -34,6 +34,7 @@ export default function Lobby() {
       console.log("Lobby:socket", socket);
       socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
+
         console.log("Mensagem recebida:lobby", data);
 
         if (data.type === "client-login" && !user) {
@@ -51,13 +52,16 @@ export default function Lobby() {
         }
 
         if (data.type === "welcome-message") {
-          console.log("Welcome message:lobby", data);
-          if (roomId === data.roomId) {
-            const roomData = data.roomData.pop() || null;
+          const { data: roomJoinInfo } = data;
+          console.log("Welcome message:lobby", roomJoinInfo);
+          if (roomId === roomJoinInfo.roomId) {
+            const roomData = roomJoinInfo.roomData.pop() || null;
+            console.log("RoomData:lobby", roomData);
             if (roomData) {
-              roomData.client = data.client;
-              roomData.isJoining = true;
-              navigate(`/room/${data.roomId}`, {
+              roomData.client = roomJoinInfo.client;
+              roomData.clients = roomJoinInfo.clients;
+              roomData.isJoining = roomJoinInfo.isNewMember;
+              navigate(`/room/${roomJoinInfo.roomId}`, {
                 state: {
                   roomData
                 }
@@ -112,11 +116,9 @@ export default function Lobby() {
             <CardFooter>
               <Button onClick={() => send({
                 type: "create-room", data: {
-                  message: {
-                    name: roomName || "Room Default",
-                    topic: roomTopic || "Default Topic",
-                    roundQtt: roomRounds || 1,
-                  }
+                  name: roomName || "Room Default",
+                  topic: roomTopic || "Default Topic",
+                  roundQtt: roomRounds || 1,
                 }
               })}>
                 Create room
