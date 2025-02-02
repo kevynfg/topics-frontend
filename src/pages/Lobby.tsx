@@ -14,6 +14,8 @@ export default function Lobby() {
   const [roomTopic, setRoomTopic] = useState<string | null>(null);
   const [roomRounds, setRoomRounds] = useState<number | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
+  const [nickname, setNickname] = useState<string | null>(null);
+  const [hostNickname, setHostNickname] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const onInput = (e: React.FormEvent<HTMLInputElement>) => {
@@ -75,7 +77,7 @@ export default function Lobby() {
 
   return (
     <>
-      <Tabs defaultValue="create-room" className="w-[400px] h-[450px] overflow-hidden">
+      <Tabs defaultValue="create-room" className="w-[400px] h-[550px] overflow-hidden">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger className="hover:bg-slate-300" value="create-room">Create Room</TabsTrigger>
           <TabsTrigger className="hover:bg-slate-300" value="join-room">Join Room</TabsTrigger>
@@ -89,8 +91,12 @@ export default function Lobby() {
             <CardContent>
               <form >
                 <div className="my-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input id="name" placeholder="Your room name" onChange={(e) => setRoomName(String(e.target.value))} />
+                  <Label htmlFor="nickname">Name</Label>
+                  <Input id="nickname" placeholder="Your name to play" onChange={(e) => setHostNickname(String(e.target.value))} />
+                </div>
+                <div className="my-2">
+                  <Label htmlFor="room-name">Room Name</Label>
+                  <Input id="room-name" placeholder="Your room name" onChange={(e) => setRoomName(String(e.target.value))} />
                 </div>
                 <div className="my-2">
                   <Label htmlFor="topic">Choose a topic</Label>
@@ -119,6 +125,7 @@ export default function Lobby() {
                   name: roomName || "Room Default",
                   topic: roomTopic || "Default Topic",
                   roundQtt: roomRounds || 1,
+                  nickname: hostNickname || "Guest"
                 }
               })}>
                 Create room
@@ -135,6 +142,10 @@ export default function Lobby() {
             <CardContent>
               <form >
                 <div className="my-2">
+                  <Label htmlFor="nickname">Nickname</Label>
+                  <Input id="nickname" placeholder="Enter your nickname to play" onChange={(e) => setNickname(String(e.target.value))} />
+                </div>
+                <div className="my-2">
                   <Label htmlFor="room-code">Room Code</Label>
                   <Input id="room-code" placeholder="Enter room code" onChange={(e) => setRoomId(String(e.target.value))} />
                 </div>
@@ -145,7 +156,8 @@ export default function Lobby() {
                 console.log("Joining room", roomId);
                 send({
                   type: "join-room", data: {
-                    roomId
+                    roomId,
+                    nickname: nickname || "Guest"
                   }
                 });
               }}>
