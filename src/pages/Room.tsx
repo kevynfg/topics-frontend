@@ -122,11 +122,11 @@ export default function Room() {
   const messageRef = useRef<HTMLDivElement>(null);
 
   if (!roomId) {
-    console.log("RoomId não encontrado")
+    console.log("RoomId not found")
     navigate("/");
   }
   const location = useLocation();
-  const { roomData }  = location.state || {};
+  const { roomData } = location.state || {};
 
   useEffect(() => {
     console.log("Room:state", roomData);
@@ -149,7 +149,7 @@ export default function Room() {
       if (roomData.isJoining && user === roomData.client) {
         for (let player of roomData.playersInfo) {
           if (player.client === user) {
-            console.log("Bem vindo a sala: ", player.nickname);
+            console.log("Welcome to the room: ", player.nickname);
           }
         }
       }
@@ -163,10 +163,20 @@ export default function Room() {
 
   const renderName = useCallback((host: string) => {
     if (host === user) {
-      return "Você";
+      return "yourself";
     }
-    return "Fulano";
+    return "John doe";
   }, [user]);
+
+  const getPlayerNickname = (client: string) => {
+    if (roomInfo && roomInfo.playersInfo) {
+      const player = roomInfo.playersInfo.find((player) => player.client === client);
+      if (player) {
+        return player.nickname;
+      }
+    }
+    return "Unknown";
+  }
 
   useEffect(() => {
     if (roomInfo?.topic && roomInfo?.rounds) {
@@ -178,7 +188,7 @@ export default function Room() {
           // setRoomQuiz({});
           return {};
         } catch (error) {
-          console.error("Erro ao buscar dados da API:", error);
+          console.error("Error fetching data from API:", error);
         }
       };
       fetchRoomData()
@@ -254,15 +264,15 @@ export default function Room() {
   }
 
   return (
-    <div className="all-[unset] bg-slate-900 flex h-screen w-screen">
-      {/* Conteúdo Principal */}
+    <div className="all-[unset] bg-slate-900 flex h-[80vh] w-screen">
+      {/* Main content */}
       <div className="w-screen p-4 flex flex-col gap-4 items-center">
         <p className="text-white text-lg">Game Screen</p>
         <p className="text-white break-words w-full text-center">
-          Conteúdo principal aqui.
+          Main content here.
         </p>
-        {/* Rodapé com Botões */}
-        <footer className="w-full max-w-md flex justify-between gap-4 p-4">
+        {/* Bottom buttons */}
+        <footer className="w-full max-w-md flex justify-between gap-4 p-4 mt-auto">
           <Button className="bg-slate-800" onClick={() => toggleOverlay('left')}>Chat</Button>
           <Button className="bg-slate-800" onClick={() => toggleOverlay('right')}>Players</Button>
         </footer>
@@ -282,25 +292,30 @@ export default function Room() {
                 }}>Copy room id</button>
 
                 <div className="mt-10 text-white shadow-lg max-h-[90%] w-[90vw] flex flex-col bg-gray-900">
-                  {/* Cabeçalho do Chat */}
+                  {/* Chat header */}
                   <div className="bg-gray-900 text-lg font-bold text-center rounded-tr-sm rounded-tl-sm">
                     Chat
                   </div>
 
-                  {/* Área de Mensagens */}
+                  {/* Messages */}
                   <div className="overflow-y-scroll w-[100%] !max-h-[70vh] h-[250px] flex items-start flex-col gap-4 bg-gray-900 pr-2 pl-2">
                     {roomMessages.map((message: any, index: any) => (
                       <div ref={messageRef} key={index} className={
                         `bg-gray-800 mr-1 ml-1
-                          flex ${renderName(message.sender) === "Você" ? "justify-end ml-auto" : "justify-start"}
-                          max-w-xs rounded-lg px-4 py-1 shadow ${renderName(message.sender) === "Você" ? "bg-blue-500 text-white rounded-tr-none" : "bg-gray-400 text-white rounded-tl-none"}
+                          flex ${renderName(message.sender) === "yourself" ? "justify-end ml-auto" : "justify-start"}
+                          flex-col gap-1
+                          items-start
+                          max-w-xs rounded-lg px-4 py-1 shadow ${renderName(message.sender) === "yourself" ? "bg-blue-500 text-white rounded-tr-none" : "bg-gray-400 text-white rounded-tl-none"}
                         `}>
+                        {renderName(message.sender) === "yourself" ? (
+                          ''
+                        ) : <p className="text-white text-sm">{getPlayerNickname(message.sender)}:</p>}
                         {message.message}
                       </div>
                     ))}
                   </div>
 
-                  {/* Campo de Entrada */}
+                  {/* Input field */}
                   <div className="bg-gray-900">
                     <div className="flex justify-center items-center gap-2 mb-4">
                       <input
@@ -342,7 +357,7 @@ export default function Room() {
                 })}
               </div>
             )}
-            <Button className="bg-slate-900" onClick={toggleAllOverlays}>Fechar</Button>
+            <Button className="bg-slate-900 mt-auto" onClick={toggleAllOverlays}>Fechar</Button>
           </div>
         </div>
       )
