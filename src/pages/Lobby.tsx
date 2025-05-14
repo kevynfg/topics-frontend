@@ -48,7 +48,10 @@ export default function Lobby() {
           console.log("Room created:lobby", data);
           navigate(`/room/${data.roomId}`, {
             state: {
-              roomData: data
+              roomData: {
+                ...data,
+                currentRound: 1
+              }
             }
           });
         }
@@ -63,6 +66,7 @@ export default function Lobby() {
               roomData.client = roomJoinInfo.client;
               roomData.clients = roomJoinInfo.clients;
               roomData.isJoining = roomJoinInfo.isNewMember;
+              roomData.rounds = roomData.totalRounds;
               navigate(`/room/${roomJoinInfo.roomId}`, {
                 state: {
                   roomData

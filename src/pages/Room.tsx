@@ -4,6 +4,35 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { useWebSocket } from "../context/websocket";
 
+const quizMock = {
+  "id": 8016,
+  "question": "How do you securely copy a file over SSH?",
+  "description": "Understanding secure file transfer using SSH.",
+  "answers": {
+      "answer_a": "scp file username@host:/path/to/destination",
+      "answer_b": "ssh_copy file username@host:/path/to/destination",
+      "answer_c": "rsync file username@host:/path/to/destination",
+      "answer_d": "copy file username@host:/path/to/destination"
+  },
+  "multiple_correct_answers": "false",
+  "correct_answers": {
+      "answer_a_correct": "true",
+      "answer_b_correct": "false",
+      "answer_c_correct": "false",
+      "answer_d_correct": "false",
+      "answer_e_correct": "false",
+      "answer_f_correct": "false"
+  },
+  "explanation": "Using `scp` securely copies files over SSH.",
+  "tags": [
+      {
+          "name": "BASH"
+      }
+  ],
+  "category": "bash",
+  "difficulty": "Hard"
+}
+
 interface PlayerInfo {
   nickname: string;
   client: string;
@@ -20,39 +49,6 @@ interface RoomData {
   isJoining: boolean;
 }
 
-const invalidData = {
-  "id": "720",
-  "question": "Cronjobs in kubernetes run in",
-  "description": "",
-  "answers": {
-    "answer_a": "UTC only",
-    "answer_b": "Based on NTP settings",
-    "answer_c": "Master node local timezone",
-    "answer_d": "GMT only",
-    "answer_e": "",
-    "answer_f": ""
-  },
-  "multiple_correct_answers": false,
-  "correct_answers": {
-    "answer_a_correct": true,
-    "answer_b_correct": false,
-    "answer_c_correct": false,
-    "answer_d_correct": false,
-    "answer_e_correct": false,
-    "answer_f_correct": false
-  },
-  "correct_answer": "answer_a",
-  "explanation": "",
-  "tip": "",
-  "tags": [
-    {
-      "name": "Kubernetes"
-    }
-  ],
-  "category": "Linux",
-  "difficulty": "Easy"
-}
-
 type RoomMessage = {
   host: string;
   message: string;
@@ -67,17 +63,29 @@ type RoomInfo = {
   rounds: number;
   type: string;
   playersInfo: PlayerInfo[]
+  // topicData: any;
+  currentRound: number;
 }
 
 export default function Room() {
-  const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
-  const [roomMessage, setRoomMessage] = useState<string | null>(null);
-  const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([]);
-  const { socket, send, user } = useWebSocket();
-  const [roomQuiz, setRoomQuiz] = useState<any | null>(null);
   const { id } = useParams();
   const roomId = id || null;
   const navigate = useNavigate();
+  const { socket, send, user } = useWebSocket();
+
+  const [gameState, setGameState] = useState<any | null>({
+    started: false,
+    ended: false,
+  });
+  const [timer, setTimer] = useState<any | null>(null);
+  const [timerInterval, setTimerInterval] = useState<any | null>(null);
+  const [timerDuration, setTimerDuration] = useState<any | null>(null);
+  const [currentRound, setCurrentRound] = useState(0);
+
+  const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
+  const [roomMessage, setRoomMessage] = useState<string | null>(null);
+  const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([]);
+  const [roomQuiz, setRoomQuiz] = useState<any | null>(null);
   const [isOverlayVisible, setIsOverlayVisible] = useState(false);
   const [rightOverlay, setRightOverlay] = useState(false);
   const [leftOverlay, setLeftOverlay] = useState(false);
@@ -126,6 +134,7 @@ export default function Room() {
     navigate("/");
   }
   const location = useLocation();
+  console.log("Room:location", location);
   const { roomData } = location.state || {};
 
   useEffect(() => {
@@ -144,7 +153,8 @@ export default function Room() {
         playersInfo: roomData.playersInfo ? roomData.playersInfo : [{
           nickname: roomData.nickname,
           client: roomData.host
-        }]
+        }],
+        currentRound: roomData.currentRound,
       })
       if (roomData.isJoining && user === roomData.client) {
         for (let player of roomData.playersInfo) {
@@ -153,12 +163,18 @@ export default function Room() {
           }
         }
       }
+
+      if (roomData.topicData) {
+        setRoomQuiz(roomData.topicData);
+      }
     }
-    console.log("Room:info", roomInfo);
+    console.log("Room:info 1", roomInfo);
   }, [roomData, user, socket]);
 
   useEffect(() => {
-    console.log("Room:info", roomInfo);
+    console.log("Room:info 2", roomInfo);
+    console.log("Room:info 2:topicData", roomQuiz);
+    setCurrentRound(roomInfo?.currentRound || 0);
   }, [roomInfo]);
 
   const renderName = useCallback((host: string) => {
@@ -178,20 +194,97 @@ export default function Room() {
     return "Unknown";
   }
 
+  const showQuestion = useCallback((rounds: number | undefined) => {
+      if (timer === 10) {
+        setTimer(0);
+        clearInterval(timerInterval);
+        clearInterval(timerDuration);
+      };
+      console.log("Executando...", { currentRound, rounds });
+      if (currentRound > rounds!) {
+        return <div className="flex justify-center items-center h-full">
+          <p className="text-white">No more questions</p>
+        </div>
+      }
+      const currentQuestion = roomQuiz[currentRound - 1];
+      if (!currentQuestion) {
+        return <div className="flex justify-center items-center h-full">
+          <p className="text-white">No question found</p>
+        </div>
+      }
+      return <div className="w-full flex flex-col gap-4">
+        <div key={currentRound - 1} className="p-4 rounded-lg shadow-lg">
+          <p className="text-white text-xl">{currentQuestion.question}</p>
+          <br/>
+          <p className="text-gray-400 text-sm">{currentQuestion.description}</p>
+        </div>
+      </div>
+  }, [currentRound, roomQuiz]);
+
+  const showAnswers = useCallback((rounds: number | undefined) => {
+    if (currentRound > rounds!) {
+      return <div className="flex justify-center items-center h-full">
+        <p className="text-white">No more questions</p>
+      </div>
+    }
+
+    const currentQuestion = roomQuiz[currentRound - 1];
+    if (!currentQuestion) {
+      return <div className="flex justify-center items-center h-full">
+        <p className="text-white">No question found</p>
+      </div>
+    }
+    const answers = Object.entries(currentQuestion.answers).map(([key, value]) => {
+      if (value) {
+        return (
+          <div key={key} className="bg-gray-900 p-4 rounded-lg shadow-lg hover:bg-gray-800 cursor-pointer"
+          onClick={() => {
+            console.log("Answer clicked", key);
+          }}>
+            <p className="text-white">{String(value)}</p>
+          </div>
+        );
+      }
+      return null;
+    }
+    );
+    return (
+      <div className="w-full h-full flex flex-col gap-4">
+        {answers}
+      </div>
+    );
+  }, [currentRound, roomQuiz]);
+
   useEffect(() => {
     if (roomInfo?.topic && roomInfo?.rounds) {
       const fetchRoomData = async () => {
         try {
           // const response = await fetch(`https://quizapi.io/api/v1/questions?limit=${roomInfo.rounds}&apiKey=sEw4NrqsQvolaZE8T815FIjSINBdGVoLEvFbNEnX`);
           // const data = await response.json();
-
-          // setRoomQuiz({});
+          const data = [quizMock];
+          console.log("Data fetched from API:", data);
+          send({
+            type: "save-topic", data: {
+              topic: roomInfo.topic,
+              roomId: roomId,
+              topicData: data,
+            }
+          })
+          // setRoomQuiz(data);
+          console.log("Data sent to server:", {
+            topic: roomInfo.topic,
+            roomId: roomId,
+            topicData: data,
+          })
+          // setCurrentRound(1);
           return {};
         } catch (error) {
           console.error("Error fetching data from API:", error);
         }
       };
-      fetchRoomData()
+      if (!roomQuiz) {
+        fetchRoomData();
+      }
     }
   }, [roomId, roomInfo?.topic]);
 
@@ -221,8 +314,11 @@ export default function Room() {
                     topic: roomDataNewMember.topic,
                     rounds: roomDataNewMember.totalRounds,
                     type,
-                    playersInfo: roomDataNewMember.playersInfo
+                    playersInfo: roomDataNewMember.playersInfo,
+                    // topicData: roomDataNewMember.topicData || null,
+                    currentRound: roomDataNewMember.currentRound,
                   })
+                  setRoomQuiz(roomDataNewMember.topicData);
                 }
               }
             }
@@ -241,6 +337,24 @@ export default function Room() {
             if (roomId === data.roomId) {
               console.log("Tópico salvo:room", data);
               setRoomQuiz(data.topicData);
+            }
+          }
+
+          if (type === "game-started") {
+            console.log("Game started", data);
+            if (roomId === data.roomId) {
+              console.log("Game started:room", data);
+              setGameState({ started: true, ended: false });
+              setRoomQuiz(data.topicData);
+              setCurrentRound(1);
+              // setTimerDuration(setInterval(() => {
+              //   setCurrentRound((prev: number) => prev + 1);
+              // }, 10000));
+              // setTimerInterval(setInterval(() => {
+              //   setTimer((prev: number) => prev + 1);
+              // }
+              // , 1000));
+              // setTimer(0);
             }
           }
         }
@@ -263,17 +377,55 @@ export default function Room() {
     }
   }
 
+  const startGame = () => {
+    console.log("Starting game", roomId);
+    if (roomId) {
+      send({
+        type: "start-game", data: {
+          roomId: roomId,
+          rounds: roomInfo?.rounds,
+          topic: roomInfo?.topic,
+          topicData: roomQuiz,
+        }
+      })
+      setGameState({ started: true, ended: false });
+    }
+  }
+
   return (
     <div className="all-[unset] bg-slate-900 flex h-[80vh] w-screen">
       {/* Main content */}
       <div className="w-screen p-4 flex flex-col gap-4 items-center">
-        <p className="text-white text-lg">Game Screen</p>
         <p className="text-white break-words w-full text-center">
-          Main content here.
+          {roomInfo && roomInfo.topic ? `Topic: ${String(roomInfo.topic).toUpperCase()}` : "No topic selected"}
         </p>
+
+        <div className="bg-slate-800 w-full max-w-md h-[70vh] flex flex-col gap-4 p-4 rounded-lg shadow-lg">
+          <p className="text-white text-lg flex justify-center underline">Quiz</p>
+          {roomQuiz && roomQuiz.length > 0 ? showQuestion(roomInfo?.rounds) : (
+            <div className="flex justify-center items-center h-full">
+              <p className="text-white">No quiz started</p>
+            </div>
+          )}
+
+          {roomQuiz && roomQuiz.length > 0 && (
+            <div className="flex justify-center items-center gap-2">
+              {showAnswers(roomInfo?.rounds)}
+            </div>
+          )}
+
+        </div>
+
+
         {/* Bottom buttons */}
         <footer className="w-full max-w-md flex justify-between gap-4 p-4 mt-auto">
           <Button className="bg-slate-800" onClick={() => toggleOverlay('left')}>Chat</Button>
+          <Button className="bg-green-800 w-[20%] hover:bg-green-500" onClick={startGame}>Start</Button>
+          {timer && (
+            <div className="bg-slate-800 p-2 rounded-lg shadow-lg">
+              <p className="text-white text-lg">{`Timer: ${String(timer)}`}</p>
+            </div>
+          )}
           <Button className="bg-slate-800" onClick={() => toggleOverlay('right')}>Players</Button>
         </footer>
       </div>
