@@ -11,7 +11,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </NavigationMenuItem>
       </NavigationMenuList>
     </NavigationMenu>
-    <main className="bg-slate-900 flex h-screen items-center justify-center flex-col p-4">{children}</main>
+    <main className="bg-slate-900 flex items-center justify-center flex-col h-screen">{children}</main>
   </>)
 };
 
