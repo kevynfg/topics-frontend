@@ -80,6 +80,12 @@ type AnswerPlayers = {
   answer_f: PlayersAnswer;
 }
 
+type PlayersInfo = {
+  nickname: string;
+  client: string;
+  isReady?: boolean;
+}
+
 export default function Room() {
   const { id } = useParams();
   const roomId = id || null;
@@ -109,7 +115,16 @@ export default function Room() {
     answer_e: [],
     answer_f: [],
   });
-  const selectedAnswer = useRef<keyof AnswerPlayers | null>(null);
+
+  const [isStartingNewRound, setIsStartingNewRound] = useState(false);
+  const [timerEnded, setTimerEnded] = useState(false);
+  const [gameReady, setgameReady] = useState(false);
+  const [waitingRoom, setWaitingRoom] = useState({
+    players: 0,
+    playersReady: 0,
+    playersInfo: [] as PlayersInfo[],
+    everyoneIsReady: false,
+  });
 
   const toggleOverlay = (direction: "left" | "right") => {
     console.log("Toggling overlay");
@@ -155,12 +170,15 @@ export default function Room() {
   }
   const location = useLocation();
   console.log("Room:location", location);
+  console.log("waitingRoom", waitingRoom);
+  
+  if (waitingRoom.everyoneIsReady && !gameReady) {
+    setgameReady(true);
+  }
+  
   const { roomData } = location.state || {};
 
-  useEffect(() => {
-    console.log("Room:state", roomData);
-    console.log("Room:user", user);
-    console.log("Room:socket", socket);
+  const resetRoom = useCallback((restart: boolean) => {
     if (roomData) {
       console.log("Setting room data...")
       setRoomInfo({
@@ -189,8 +207,18 @@ export default function Room() {
       }
     }
 
-    setCurrentRound(roomData.currentRound || 0);
-  }, [roomData, user, socket]);
+    setCurrentRound(restart ? 0 : roomData.currentRound || 0);
+  }, [roomData, user])
+
+  useEffect(() => {
+    console.log("Room:state", roomData);
+    console.log("Room:user", user);
+    console.log("Room:socket", socket);
+    const restart = false;
+    resetRoom(restart);
+  }, [roomData, user, socket, resetRoom]);
+
+
 
   const test = () => {
     const answersKeys = Object.keys(answerPlayers);
@@ -201,6 +229,14 @@ export default function Room() {
   useEffect(() => {
     console.log("Room:info 2", roomInfo);
     console.log("Room:info 2:topicData", roomQuiz);
+    setWaitingRoom((state) => {
+      return {
+        players: roomInfo?.playersInfo?.length || 0,
+        playersReady: state.playersReady || 0,
+        playersInfo: roomInfo?.playersInfo || [],
+        everyoneIsReady: state.everyoneIsReady || false,
+      }
+    });
   }, [roomInfo]);
 
   const renderName = useCallback((host: string) => {
@@ -334,6 +370,7 @@ export default function Room() {
                   answer: key,
                   player: userElement.client,
                   nickname: userElement.nickname,
+                  round: currentRound
                 }
               })
               console.log("Answer clicked", key);
@@ -451,6 +488,7 @@ export default function Room() {
             if (roomId === data.roomId) {
               const lastRun = !data.completed && data.currentRound === roomInfo?.rounds;
               console.log("Round saved:room", data);
+              setIsStartingNewRound(false)
               setGameState({ started: lastRun, ended: data.completed });
               setRoomQuiz(data.topicData);
               setCurrentRound(data.currentRound || 0);
@@ -468,37 +506,56 @@ export default function Room() {
               }
             }
           }
+
+          if (type === "player-ready") {
+            console.log("Player ready", data);
+            if (roomId === data.roomId) {
+              console.log("Player ready:room", data);
+              setWaitingRoom(() => {
+                const playersReady = data.playersInfo.filter((player: PlayersInfo) => player.isReady).length;
+                return {
+                  players: data.playersInfo.length,
+                  playersReady: playersReady,
+                  playersInfo: data.playersInfo,
+                  everyoneIsReady: data.everyoneReady,
+                }
+              });
+            }
+            checkEveryonesReady();
+          }
         }
       }
     }
   }, [socket, roomId, user, roomInfo]);
 
   useEffect(() => {
-    if (gameState?.started && !gameState?.ended) {
+    if (gameState?.started && !gameState?.ended && isStartingNewRound) {
+      console.log("Starting timer...", timer)
       const timeCountdown = setInterval(() => {
         setTimer((prev: number) => prev + 1);
         if (timer === 3) {
           setTimer(0);
           clearInterval(timeCountdown);
-          // setGameState({ started: false, ended: true });
-          send({
-            type: "round-ended", data: {
-              roomId: roomId,
-              topic: roomInfo?.topic,
-              topicData: roomQuiz,
-              currentRound: currentRound,
-              rounds: roomInfo?.rounds,
-              playersInfo: roomInfo?.playersInfo,
-              gameCompleted: currentRound > roomInfo?.rounds!,
-            }
-          })
+          setTimerEnded(true)
+          setIsStartingNewRound(false)
+          // send({
+          //   type: "round-ended", data: {
+          //     roomId: roomId,
+          //     topic: roomInfo?.topic,
+          //     topicData: roomQuiz,
+          //     currentRound: currentRound,
+          //     rounds: roomInfo?.rounds,
+          //     playersInfo: roomInfo?.playersInfo,
+          //     gameCompleted: currentRound > roomInfo?.rounds!,
+          //   }
+          // })
         }
       }, 1000);
       return () => {
         clearInterval(timeCountdown);
       }
     }
-  }, [gameState?.started, gameState?.ended, timer]);
+  }, [gameState?.started, gameState?.ended, timer, isStartingNewRound]);
 
   const sendMessage = () => {
     console.log("Sending message", roomId);
@@ -515,10 +572,62 @@ export default function Room() {
     }
   }
 
+  const checkEveryonesReady = () => {
+    console.log("Checking if everyone is ready", waitingRoom);
+    if (waitingRoom.playersReady === waitingRoom.players && waitingRoom.players > 0) {
+      setgameReady(true);
+      return true;
+    }
+    return false;
+  }
+
+  const checkIfHostAndGameIsReady = () => {
+    const playerInfo = waitingRoom.playersInfo.find((player) => player.client === user);
+    if (playerInfo?.isReady) {
+      return true;
+    }
+    return false;
+  }
+
   const startGame = () => {
+    if (!gameReady && waitingRoom.players > 0 && waitingRoom.playersReady < waitingRoom.players) {
+      send({
+        type: "player-ready", data: {
+          roomId: roomId,
+          player: user,
+        }
+      });
+      return;
+    }
+    console.log("roundCompleted =>", roundCompleted)
+    if (timerEnded) {
+      send({
+        type: "round-ended", data: {
+          roomId: roomId,
+          topic: roomInfo?.topic,
+          topicData: roomQuiz,
+          currentRound: currentRound,
+          rounds: roomInfo?.rounds,
+          playersInfo: roomInfo?.playersInfo,
+          gameCompleted: currentRound > roomInfo?.rounds!,
+        }
+      })
+      setTimerEnded(false)
+      return;
+    }
+    if (roundCompleted) {
+      setRoundCompleted(false)
+      const restart = true;
+      resetRoom(restart);
+      setCurrentRound(1);
+      return
+    }
+
+    setIsStartingNewRound(true);
+
     console.log("Starting game", roomId);
     if (roomId) {
-      if (currentRound > 1) {
+      if (currentRound > 1 && gameState.ended && !roundCompleted) {
         send({
           type: "round-ended", data: {
             roomId: roomId,
@@ -538,7 +647,7 @@ export default function Room() {
           rounds: roomInfo?.rounds,
           topic: roomInfo?.topic,
           topicData: roomQuiz,
-          currentRound
+          currentRound: roundCompleted ? 1 : currentRound
         }
       })
     }
@@ -553,28 +662,65 @@ export default function Room() {
     }
   }, [roomInfo, currentRound]);
 
+  const showPlayers = useCallback(() => {
+    if (roomInfo?.playersInfo?.length) {
+      return roomInfo.playersInfo.map((player: any, index: number) => (
+        <p key={index} className="text-white break-words w-full text-center">
+          <p>Jogador {index+1}: <b>{player.nickname}</b></p>
+        </p>
+      ))
+    }
+
+  }, [roomInfo?.playersInfo])
+
+  const renderButton = () => {
+    if (roundCompleted)
+      return 'Play again'
+    if (timerEnded)
+      return 'Próximo round'
+
+    if (!gameReady) {
+      return 'Ready'
+    }
+    return 'Start'
+  }
+
   return (
     <div className="all-[unset] bg-slate-900 flex h-screen w-screen flex-col items-center justify-center">
       {/* Main content */}
       <div className="w-screen p-4 flex flex-col gap-1 items-center">
         <div className="bg-slate-800 w-full max-w-md flex flex-col gap-4 p-4 rounded-lg shadow-lg">
           <p className="text-white text-2xl flex justify-center underline">Quiz</p>
-          <p className="text-white break-words w-full text-center">
-            {roomInfo && roomInfo.topic ? `Topic: ${String(roomInfo.topic).toUpperCase()}` : "No topic selected"}
-          </p>
-          <p className="text-white text-sm flex justify-center">Round {showCurrentRound()} of {roomInfo?.rounds}</p>
 
-          {/* Quiz question */}
-          {roomQuiz && roomQuiz.length > 0 ? showQuestion(roomInfo?.rounds) : (
-            <div className="flex justify-center items-center h-full">
-              <p className="text-white">No quiz started</p>
-            </div>
+          {gameReady && (
+            <>
+              <p className="text-white break-words w-full text-center">
+                {roomInfo && roomInfo.topic ? `Topic: ${String(roomInfo.topic).toUpperCase()}` : "No topic selected"}
+              </p>
+              <p className="text-white text-sm flex justify-center">Round {showCurrentRound()} of {roomInfo?.rounds}</p>
+
+              {/* Quiz question */}
+              {roomQuiz && roomQuiz.length > 0 ? showQuestion(roomInfo?.rounds) : (
+                <div className="flex justify-center items-center h-full">
+                  <p className="text-white">No quiz started</p>
+                </div>
+              )}
+
+              {roomQuiz && roomQuiz.length > 0 && (
+                <div className="flex justify-center items-center gap-2">
+                  {showAnswers()}
+                </div>
+              )}
+            </>
           )}
 
-          {roomQuiz && roomQuiz.length > 0 && (
-            <div className="flex justify-center items-center gap-2">
-              {showAnswers()}
-            </div>
+          {!gameReady && (
+            <>
+              <p className="text-white break-words w-full text-center">
+                Waiting for players to be ready...
+              </p>
+              {showPlayers()}
+            </>
           )}
 
         </div>
@@ -589,8 +735,11 @@ export default function Room() {
             </div>
 
           ) : (
-            <Button className={`bg-green-800 w-[20%] hover:bg-green-500 ${roundCompleted ?
-              'pointer-events-none' : ''}`} onClick={startGame}>Start</Button>
+            <Button className={`bg-green-800 max-w-[30%] hover:bg-green-500 `} onClick={startGame}
+            disabled={checkIfHostAndGameIsReady()}
+            >
+              {renderButton()}
+            </Button>
           )}
 
           <Button className="bg-slate-800" onClick={() => toggleOverlay('right')}>Players</Button>
