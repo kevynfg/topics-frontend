@@ -1,6 +1,7 @@
 export type PlayerInfo = {
   nickname: string;
   client: string;
+  isReady?: boolean;
 }
 
 export type RoomInfo = {

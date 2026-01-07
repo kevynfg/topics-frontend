@@ -125,6 +125,7 @@ export default function Room() {
     playersInfo: [] as PlayersInfo[],
     everyoneIsReady: false,
   });
+  const [canStart, setCanStart] = useState(false);
 
   const toggleOverlay = (direction: "left" | "right") => {
     console.log("Toggling overlay");
@@ -171,16 +172,18 @@ export default function Room() {
   const location = useLocation();
   console.log("Room:location", location);
   console.log("waitingRoom", waitingRoom);
-  
-  if (waitingRoom.everyoneIsReady && !gameReady) {
-    setgameReady(true);
-  }
-  
+
+
   const { roomData } = location.state || {};
+
+  if (!roomData) {
+    console.log("Room data not found in location state")
+    navigate("/lobby");
+  }
 
   const resetRoom = useCallback((restart: boolean) => {
     if (roomData) {
-      console.log("Setting room data...")
+      console.log("Setting room data...", { roomData, waitingRoom });
       setRoomInfo({
         roomId: roomData.roomId,
         clients: roomData.clients,
@@ -227,8 +230,7 @@ export default function Room() {
   }
 
   useEffect(() => {
-    console.log("Room:info 2", roomInfo);
-    console.log("Room:info 2:topicData", roomQuiz);
+    console.log("Updating waiting room state...", { roomInfo, waitingRoom });
     setWaitingRoom((state) => {
       return {
         players: roomInfo?.playersInfo?.length || 0,
@@ -266,7 +268,7 @@ export default function Room() {
         <p className="text-gray-400 text-sm">{currentQuestion.description}</p>
       </div>
     </div>
-  }, [currentRound, roomQuiz]);
+  }, [currentRound, roomQuiz, roundCompleted]);
 
   const removePlayerFromOtherAnswers = useCallback((answer: keyof AnswerPlayers, player: string) => {
     const playerNickname = getPlayerNickname(player, roomInfo!);
@@ -480,6 +482,8 @@ export default function Room() {
               setGameState({ started: true, ended: false });
               setRoomQuiz(data.topicData);
               setCurrentRound(data.currentRound || 0);
+              setgameReady(true);
+              setIsStartingNewRound(true);
             }
           }
 
@@ -511,17 +515,56 @@ export default function Room() {
             console.log("Player ready", data);
             if (roomId === data.roomId) {
               console.log("Player ready:room", data);
-              setWaitingRoom(() => {
-                const playersReady = data.playersInfo.filter((player: PlayersInfo) => player.isReady).length;
-                return {
-                  players: data.playersInfo.length,
-                  playersReady: playersReady,
-                  playersInfo: data.playersInfo,
-                  everyoneIsReady: data.everyoneReady,
-                }
-              });
+              const playersReady = data.playersInfo.filter((player: PlayersInfo) => player.isReady).length;
+              const newWaitingRoomState = {
+                players: data.playersInfo.length,
+                playersReady: playersReady,
+                playersInfo: data.playersInfo,
+                everyoneIsReady: data.everyoneReady,
+              };
+              setWaitingRoom(newWaitingRoomState);
+              if (data.everyoneReady) {
+                setCanStart(true);
+              }
             }
-            checkEveryonesReady();
+          }
+
+          if (type === "restarted") {
+            console.log("Room restarted", data);
+            if (roomId === data.roomId) {
+              console.log("Room restarted:room", data);
+              setGameState({ started: false, ended: false });
+              setCurrentRound(data.roomData.currentRound || 1);
+              setRoundCompleted(false);
+              setgameReady(false);
+              setCanStart(false);
+              setRoomInfo({
+                roomId: data.roomData.roomId,
+                clients: data.clients,
+                host: data.roomData.host,
+                topic: data.roomData.topic,
+                rounds: data.roomData.totalRounds,
+                type: data.roomData.type || "Default",
+                playersInfo: data.roomData.playersInfo.map((player: PlayersInfo) => ({
+                  nickname: player.nickname,
+                  client: player.client,
+                  isReady: player.isReady || false,
+                }) as PlayersInfo),
+                currentRound: data.roomData.currentRound,
+              })
+              setWaitingRoom({
+                players: data.roomData.playersInfo.length,
+                playersReady: 0,
+                playersInfo: data.roomData.playersInfo.map((player: PlayersInfo) => ({
+                  nickname: player.nickname,
+                  client: player.client,
+                  isReady: player.isReady || false,
+                }) as PlayersInfo),
+                everyoneIsReady: false,
+              })
+              setRoomQuiz(data.roomData.topicData);
+              setTimerEnded(false);
+            }
           }
         }
       }
@@ -534,6 +577,7 @@ export default function Room() {
       const timeCountdown = setInterval(() => {
         setTimer((prev: number) => prev + 1);
         if (timer === 3) {
+          console.log("Timer ended, round is over");
           setTimer(0);
           clearInterval(timeCountdown);
           setTimerEnded(true)
@@ -572,25 +616,28 @@ export default function Room() {
     }
   }
 
-  const checkEveryonesReady = () => {
-    console.log("Checking if everyone is ready", waitingRoom);
-    if (waitingRoom.playersReady === waitingRoom.players && waitingRoom.players > 0) {
-      setgameReady(true);
-      return true;
-    }
-    return false;
-  }
-
   const checkIfHostAndGameIsReady = () => {
     const playerInfo = waitingRoom.playersInfo.find((player) => player.client === user);
-    if (playerInfo?.isReady) {
+    const isEveryoneReady = roomInfo?.playersInfo?.every((player) => player.isReady);
+    if (isEveryoneReady) {
+      setCanStart(true);
       return true;
     }
-    return false;
+    console.log("checkIfHostAndGameIsReady: ", { playerInfo, roomInfo, gameReady });
+    if (canStart && roomInfo?.host === user) {
+      const enableStartButton = true;
+      return !enableStartButton;
+    }
+
+    if (!playerInfo?.isReady) {
+      return false;
+    }
+    return true;
   }
 
   const startGame = () => {
     if (!gameReady && waitingRoom.players > 0 && waitingRoom.playersReady < waitingRoom.players) {
+      console.log("Player is ready, sending player-ready...");
       send({
         type: "player-ready", data: {
           roomId: roomId,
@@ -601,6 +648,7 @@ export default function Room() {
     }
     console.log("roundCompleted =>", roundCompleted)
     if (timerEnded) {
+      console.log("Timer ended, sending round-ended...");
       send({
         type: "round-ended", data: {
           roomId: roomId,
@@ -616,18 +664,23 @@ export default function Room() {
       return;
     }
     if (roundCompleted) {
+      console.log("Round completed, resetting room for new game...");
       setRoundCompleted(false)
       const restart = true;
       resetRoom(restart);
       setCurrentRound(1);
+      send({
+        type: "reset-room", data: {
+          roomId: roomId,
+        }
+      })
       return
     }
-
-    setIsStartingNewRound(true);
 
     console.log("Starting game", roomId);
     if (roomId) {
       if (currentRound > 1 && gameState.ended && !roundCompleted) {
+        console.log("Game ended, sending round-ended...");
         send({
           type: "round-ended", data: {
             roomId: roomId,
@@ -641,6 +694,7 @@ export default function Room() {
         })
         return;
       }
+      console.log("Host starting the game...");
       send({
         type: "start-game", data: {
           roomId: roomId,
@@ -666,7 +720,7 @@ export default function Room() {
     if (roomInfo?.playersInfo?.length) {
       return roomInfo.playersInfo.map((player: any, index: number) => (
         <p key={index} className="text-white break-words w-full text-center">
-          <p>Jogador {index+1}: <b>{player.nickname}</b></p>
+          <p>Jogador {index + 1}: <b>{player.nickname}</b></p>
         </p>
       ))
     }
@@ -679,10 +733,15 @@ export default function Room() {
     if (timerEnded)
       return 'Próximo round'
 
-    if (!gameReady) {
-      return 'Ready'
+    if (canStart && !gameReady && roomInfo?.host !== user) {
+      return 'Waiting for host to start...'
     }
-    return 'Start'
+
+    if (canStart && roomInfo?.host === user) {
+      return 'Start Game'
+    }
+
+    return 'Ready'
   }
 
   return (
@@ -691,6 +750,21 @@ export default function Room() {
       <div className="w-screen p-4 flex flex-col gap-1 items-center">
         <div className="bg-slate-800 w-full max-w-md flex flex-col gap-4 p-4 rounded-lg shadow-lg">
           <p className="text-white text-2xl flex justify-center underline">Quiz</p>
+          
+          {!gameReady && (
+            <>
+              <p className="text-white break-words w-full text-center">
+                Waiting for players to be ready...
+              </p>
+              {showPlayers()}
+            </>
+          )}
+
+          {canStart && !gameReady && roomInfo?.host === user && (
+            <p className="text-white break-words w-full text-center">
+              All players are ready! You can start the game.
+            </p>
+          )}
 
           {gameReady && (
             <>
@@ -713,16 +787,6 @@ export default function Room() {
               )}
             </>
           )}
-
-          {!gameReady && (
-            <>
-              <p className="text-white break-words w-full text-center">
-                Waiting for players to be ready...
-              </p>
-              {showPlayers()}
-            </>
-          )}
-
         </div>
 
 
@@ -735,8 +799,8 @@ export default function Room() {
             </div>
 
           ) : (
-            <Button className={`bg-green-800 max-w-[30%] hover:bg-green-500 `} onClick={startGame}
-            disabled={checkIfHostAndGameIsReady()}
+            <Button className={`bg-green-800 hover:bg-green-500 `} onClick={startGame}
+              disabled={checkIfHostAndGameIsReady()}
             >
               {renderButton()}
             </Button>
